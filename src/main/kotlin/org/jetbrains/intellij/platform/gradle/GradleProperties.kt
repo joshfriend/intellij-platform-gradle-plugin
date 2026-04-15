@@ -148,6 +148,17 @@ sealed class GradleProperties<T : Any>(val defaultValue: T) {
     object SelfUpdateCheck : GradleProperties<Boolean>(true)
 
     /**
+     * When enabled, optional transitive dependencies of the `com.intellij` bundled plugin are included
+     * in the test runtime classpath. This is needed for plugins that declare optional `<depends>` on
+     * other plugins (e.g. marketplace plugins like the Go plugin) because
+     * `idea.force.use.core.classloader=true` requires all plugin classes to be on the core classpath
+     * for optional dependency configs to activate properly in tests.
+     *
+     * Default value: `false`
+     */
+    object LoadOptionalDependenciesForTestRuntime : GradleProperties<Boolean>(false)
+
+    /**
      * Controls whether [IntelliJPlatformExtension.PluginVerification.Ides.recommended] IDEs should be added automatically
      * when no IntelliJ Plugin Verifier IDEs were configured explicitly.
      *

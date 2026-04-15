@@ -1107,7 +1107,7 @@ class IntelliJPlatformDependenciesHelper(
      *
      * @param id The ID of the bundled plugin.
      */
-    private fun createIntelliJPlatformBundledPlugin(platformPath: Path, id: String): Dependency {
+    private fun createIntelliJPlatformBundledPlugin(platformPath: Path, id: String, loadOptional: Boolean = false): Dependency {
         val productInfo = platformPath.productInfo()
         val ide = ide(platformPath)
         val plugin = ide.findPluginById(id) ?: ide.findPluginByModule(id)
@@ -1138,22 +1138,26 @@ class IntelliJPlatformDependenciesHelper(
         // XML files, which might have different optional transitive dependencies defined due to IC having fewer plugins.
         // Should be the same as [collectDependencies]
         val version = productInfo.fullVersion
+        val suffix = when (loadOptional) {
+            true -> "-withOptional"
+            else -> ""
+        }
 
-        writeIvyModule(Dependencies.BUNDLED_PLUGIN_GROUP, id, version, artifactPath) {
+        writeIvyModule(Dependencies.BUNDLED_PLUGIN_GROUP, id + suffix, version, artifactPath) {
             IvyModule(
                 info = IvyModule.Info(
                     organisation = Dependencies.BUNDLED_PLUGIN_GROUP,
-                    module = id,
+                    module = id + suffix,
                     revision = version,
                 ),
                 publications = artifactPath.toIvyArtifacts(metadataRulesModeProvider, platformPath),
-                dependencies = plugin.collectDependencies(platformPath),
+                dependencies = plugin.collectDependencies(platformPath, loadOptional = loadOptional),
             )
         }
 
         val group = Dependencies.BUNDLED_PLUGIN_GROUP
 
-        return dependencyFactory.create(group, id, version)
+        return dependencyFactory.create(group, id + suffix, version)
     }
 
     /**
@@ -1182,6 +1186,7 @@ class IntelliJPlatformDependenciesHelper(
     private fun IdePlugin.collectDependencies(
         platformPath: Path,
         alreadyProcessedOrProcessing: List<String> = emptyList(),
+        loadOptional: Boolean = false,
     ): List<IvyModule.Dependency> {
         // It is crucial to use the IDE type + build number to the version.
         // Because if UI & IC are used by different submodules in the same build, they might rewrite each other's Ivy
@@ -1191,8 +1196,8 @@ class IntelliJPlatformDependenciesHelper(
         val id = requireNotNull(pluginId)
         val version = ide.version.toString()
 
-        val modulesIds = modulesDescriptors.asSequence().filter { it.moduleDefinition.loadingRule.required }.map { it.name }
-        val dependenciesIds = dependsList.asSequence().filter { !it.isOptional }.map { it.pluginId }
+        val modulesIds = modulesDescriptors.asSequence().filter { it.moduleDefinition.loadingRule.required || loadOptional }.map { it.name }
+        val dependenciesIds = dependsList.asSequence().filter { !it.isOptional || loadOptional }.map { it.pluginId }
         val pluginMainModuleIds = pluginMainModuleDependencies.asSequence().map { it.pluginId }
         val contentModuleIds = contentModuleDependencies.asSequence().map { it.moduleName }
         val ids = (modulesIds + dependenciesIds + pluginMainModuleIds + contentModuleIds)
@@ -1222,7 +1227,7 @@ class IntelliJPlatformDependenciesHelper(
                         IvyModule(
                             info = IvyModule.Info(group, name, version),
                             publications = publications,
-                            dependencies = it.collectDependencies(platformPath, alreadyProcessedOrProcessing + id),
+                            dependencies = it.collectDependencies(platformPath, alreadyProcessedOrProcessing + id, loadOptional),
                         )
                     }
                 }
@@ -1496,7 +1501,7 @@ class IntelliJPlatformDependenciesHelper(
      *
      * @param platformPath The path to the current IntelliJ Platform.
      */
-    internal fun createIntelliJPlatformTestRuntime(platformPath: Path): Dependency {
+    internal fun createIntelliJPlatformTestRuntime(platformPath: Path): List<Dependency> {
         val id = "intellij-platform-test-runtime"
         val ide = ide(platformPath)
 
@@ -1507,7 +1512,20 @@ class IntelliJPlatformDependenciesHelper(
             .map { it.safePathString }.toSet()
 
         val (group, name, version) = writeBundledModuleDependency(id, classpath, platformPath)
-        return dependencyFactory.create(group, name, version)
+        val runtimeDependency = dependencyFactory.create(group, name, version)
+
+        val loadOptional = providers[GradleProperties.LoadOptionalDependenciesForTestRuntime].get()
+        if (!loadOptional) {
+            return listOf(runtimeDependency)
+        }
+
+        // Load `com.intellij` with its optional dependencies for tests classpath.
+        // When idea.force.use.core.classloader=true is set, all plugin classes must be on the core classpath
+        // for optional dependency configs (like goland.xml) to be properly activated.
+        // See: https://youtrack.jetbrains.com/issue/IJPL-180516/Gradle-tests-fail-without-transitive-modules-jars-of-com.intellij-in-classpath
+        val optionalDepsDependency = createIntelliJPlatformBundledPlugin(platformPath, "com.intellij", loadOptional = true)
+
+        return listOf(runtimeDependency, optionalDepsDependency)
     }
 
     /**

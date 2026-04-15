@@ -244,7 +244,7 @@ abstract class IntelliJPlatformTestingExtension @Inject constructor(
                                         runCatching {
                                             dependenciesHelper.platformPathProvider(customIntelliJPlatformConfiguration.name)
                                                 .get()
-                                        }.onSuccess { add(dependenciesHelper.createIntelliJPlatformTestRuntime(it)) }
+                                        }.onSuccess { addAll(dependenciesHelper.createIntelliJPlatformTestRuntime(it)) }
                                     }
                                 }
                             },

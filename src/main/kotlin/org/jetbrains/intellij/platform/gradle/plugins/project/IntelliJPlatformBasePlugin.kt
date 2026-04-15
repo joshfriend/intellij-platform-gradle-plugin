@@ -400,7 +400,7 @@ abstract class IntelliJPlatformBasePlugin : Plugin<Project> {
                                     runCatching {
                                         dependenciesHelper.platformPathProvider(intellijPlatformConfiguration.name)
                                             .get()
-                                    }.onSuccess { add(dependenciesHelper.createIntelliJPlatformTestRuntime(it)) }
+                                    }.onSuccess { addAll(dependenciesHelper.createIntelliJPlatformTestRuntime(it)) }
                                 }
                             }
                         },
